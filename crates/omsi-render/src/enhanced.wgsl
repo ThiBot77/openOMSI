@@ -306,6 +306,9 @@ fn lamp_light(p: vec3<f32>, n: vec3<f32>, v: vec3<f32>, sf: Surface, thin: bool,
 // most of the sky, and the dashboard lies right under the windscreen.
 const CAB_AMBIENT: f32 = 1.15;
 
+// A dashboard's backlight at night against a lit window's (the night map's level outside).
+const CAB_BACKLIGHT: f32 = 0.15;
+
 // How far the puddle threshold drops with the wetness: see the puddle mask in `shade_enhanced`.
 const PUDDLE_SPREAD: f32 = 0.45;
 
@@ -395,7 +398,7 @@ fn fs_enhanced(in: FsIn) -> EnhancedOut {
 // 40 % of the day's, and never lifted over their own colour by the dark-adapted metering.
 fn display_dim(lift: f32) -> f32 {
     let night = clamp(camera.sun_color.w, 0.0, 1.0);
-    return mix(lift, min(lift, 1.0) * 0.4, night);
+    return mix(lift, min(lift, 1.0) * 0.25, night);
 }
 
 fn display_level(t: vec3<f32>) -> vec3<f32> {
@@ -1073,7 +1076,10 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
             // (a window lit from inside shows some 80 cd/m² - a room's 300 lux off its
             // walls and through a curtain - an illuminated sign more: over the dark street
             // round it, well over the screen's white, and the eye's glare blooms round it)
-            emit = emit + nm * select(enh.exposure.z * 3.6, max(enh.exposure.z * 2.0, 0.8), switched);
+            // (in the cab at night a backlit gauge or a warning lamp is a dashboard's, a
+            // fraction of a lit window's)
+            let cab_night = (1.0 - outside) * clamp(camera.sun_color.w, 0.0, 1.0);
+            emit = emit + nm * select(enh.exposure.z * 3.6, max(enh.exposure.z * 2.0, 0.8), switched) * mix(1.0, CAB_BACKLIGHT, cab_night);
         }
     }
     if (material.params2.x > 0.5 && !terrain) {
