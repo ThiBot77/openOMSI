@@ -10444,6 +10444,7 @@ fn material_extra(
         display: false,
         screen: false,
         led: false,
+        white_lit: false,
         no_map_lights: false,
         tree: false,
         sway: None,
@@ -12595,6 +12596,7 @@ impl World {
                     // their dots but never glowed.
                     extra.screen = script_slot.is_some() || script_trans.is_some();
                     extra.led = script_trans.is_some() && lm_white(&ov);
+                    extra.white_lit = ov.iter().any(|o| o.lightmap.is_some()) && lm_white(&ov);
                     if dirt_overlay {
                         extra.no_z_write = true;
                     }
@@ -12694,6 +12696,7 @@ impl World {
                         // (the item's `\S:n`, or the one it inherits from its base, keeps it
                         // an LED panel: see `MaterialExtra::led`)
                         it_extra.led = it_script_trans.is_some() && if ov_item.iter().any(|o| o.lightmap.is_some()) { lm_white(ov_item) } else { lm_white(&ov) };
+                        it_extra.white_lit = if ov_item.iter().any(|o| o.lightmap.is_some()) { lm_white(ov_item) } else { extra.white_lit };
                         it_extra.no_z_write |= extra.no_z_write;
                         it_extra.no_z_check |= extra.no_z_check;
                         it_extra.glass |= extra.glass;

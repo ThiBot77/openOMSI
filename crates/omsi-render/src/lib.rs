@@ -513,7 +513,7 @@ struct MaterialUniform {
     /// The PBR maps beside the diffuse texture (`Scene::pbr_maps`): x has a normal map,
     /// y an occlusion, z a roughness, w a metalness channel.
     pbr: [f32; 4],
-    /// x: a screen (`MaterialExtra::screen`); y: 1 `[matl_texadress_border]`, 2
+    /// x: 1 a screen (`MaterialExtra::screen`), + 2 lit white (`MaterialExtra::white_lit`); y: 1 `[matl_texadress_border]`, 2
     /// `[matl_texadress_mirroronce]`; z the border colour's rgb packed as r * 65536 + g * 256 + b (bytes), w its alpha.
     flags: [f32; 4],
     /// rgb: the D3D material's ambient colour, which takes the ambient light (C); w: 1 for
@@ -1012,6 +1012,8 @@ pub struct MaterialExtra {
     /// (Only a panel whose `[matl_lightmap]` is white all over: a flipdot carries the same
     /// mask, but its light map is a picture of the lamps over it, and it does not glow.)
     pub led: bool,
+    /// Lit by a light map that is white all over (a backlit LCD): the enhanced picture dims it at night.
+    pub white_lit: bool,
     /// The film of water on a window (`[alphascale] Rain_Window_…`): drawn as drops that sit,
     /// gather and run down the glass instead of the texture sliding down as a whole.
     pub rain_film: bool,
@@ -5909,7 +5911,7 @@ impl Renderer {
             flags: {
                 let b = extra.border.unwrap_or([0.0; 4]).map(|c| (c.clamp(0.0, 1.0) * 255.0).round());
                 [
-                    if extra.screen { 1.0 } else { 0.0 },
+                    if extra.screen { 1.0 } else { 0.0 } + if extra.white_lit { 2.0 } else { 0.0 },
                     if extra.border.is_some() {
                         1.0
                     } else if address == TexAddressing::MirrorOnce {
