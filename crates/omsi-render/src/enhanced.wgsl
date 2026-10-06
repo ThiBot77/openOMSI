@@ -391,6 +391,13 @@ fn fs_enhanced(in: FsIn) -> EnhancedOut {
 // a display's yellow-green text came out olive - and gives the middle tones the contrast
 // of `enh.debug.w` about mid grey. So the colour is kept under the knee and the contrast
 // undone in advance (with the small black offset the text has always been drawn with).
+// A display's own brightness for the light round it: as a bus's screens dim at night, to
+// 40 % of the day's, and never lifted over their own colour by the dark-adapted metering.
+fn display_dim(lift: f32) -> f32 {
+    let night = clamp(camera.sun_color.w, 0.0, 1.0);
+    return mix(lift, min(lift, 1.0) * 0.4, night);
+}
+
 fn display_level(t: vec3<f32>) -> vec3<f32> {
     let peak = max(t.r, max(t.g, t.b));
     let tk = t * min(1.0, 0.64 / max(peak, 1e-3));
@@ -576,7 +583,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
         // A mirror (params.y 0.9) is no display: its picture is the street drawn a moment
         // ago, dark at night. Brightened like a display by the metering (up to 1.6 in the
         // dark) it showed a street far brighter than the one through the windscreen.
-        let lift = select(enh.exposure.y, min(enh.exposure.y, 1.0), material.params.y < 0.95);
+        let lift = select(display_dim(enh.exposure.y), min(enh.exposure.y, 1.0), material.params.y < 0.95);
         let c = display_level(t) * lift;
         return vec4<f32>(c * aer.a + aer.rgb * pre, alpha);
     }
@@ -1088,7 +1095,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
             // it shows at night) went past the tone curve's knee and bleached its colours -
             // the Procity's red and blue gauges pink and lavender (#827). (An LED panel's
             // light map stays as it was: its dots are meant to burn above their colour.)
-            emit = emit + max(display_level(tex.rgb) * enh.exposure.y - rgb, vec3<f32>(0.0)) * w;
+            emit = emit + max(display_level(tex.rgb) * display_dim(enh.exposure.y) - rgb, vec3<f32>(0.0)) * w;
         }
     }
     if (material.emissive.w < -1.5) {
