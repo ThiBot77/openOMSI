@@ -385,20 +385,10 @@ impl Player {
         fire
     }
 
-    /// `doors_release`: the bus's own door release, the C2's switch turned over, else `bus_dooraft`; the triggers fired.
+    /// `doors_release`: the bus's door release (`VehicleInstance::door_release_trigger`); the triggers fired.
     pub(crate) fn door_release(&mut self) -> Vec<String> {
-        let p = &self.vehicle.ty.program;
-        let pick = ["bus_doorall", "CG_active", "C2_CP_doorall_1"]
-            .into_iter()
-            .find(|t| p.trigger(t).is_some())
-            .map(str::to_string)
-            .or_else(|| {
-                (p.trigger("C2_CP_Tuerfreigabe_1").is_some() && p.trigger("C2_CP_Tuerfreigabe_0").is_some())
-                    .then(|| if self.vehicle.var("C2_CP_Tuerfreigabe").is_some_and(|x| x > 0.5) { "C2_CP_Tuerfreigabe_0" } else { "C2_CP_Tuerfreigabe_1" }.to_string())
-            })
-            .or_else(|| p.trigger("bus_dooraft").is_some().then(|| "bus_dooraft".to_string()));
-        log::info!("door release: {}", pick.as_deref().unwrap_or("none on this bus"));
-        let fired: Vec<String> = pick.into_iter().collect();
+        let fired: Vec<String> = self.vehicle.door_release_trigger().map(str::to_string).into_iter().collect();
+        log::info!("door release: {}", fired.first().map_or("none on this bus", |s| s.as_str()));
         for name in &fired {
             self.vehicle.trigger(name);
         }
@@ -444,8 +434,6 @@ impl Player {
             if pressed { self.clutch_for_gate(&gate); }
             if let Some(done) = crate::hpattern::action(&mut self.vehicle, &gate, pressed, self.momentary_gears && !self.from_keyboard) { return done; }
         }
-        // the ticket key of Inputs/keyboard.cfg (T): sell the ticket the passenger at the
-        // desk asked for, on buses whose script has no ticket printer
         if omsi_input::actions::is_door_release(name) {
             if pressed {
                 let fired = self.door_release();
@@ -455,6 +443,8 @@ impl Player {
             }
             return true;
         }
+        // the ticket key of Inputs/keyboard.cfg (T): sell the ticket the passenger at the
+        // desk asked for, on buses whose script has no ticket printer
         if let Some(n) = door_action(name) {
             if pressed {
                 let fired = self.door_key(n);
