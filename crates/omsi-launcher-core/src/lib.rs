@@ -1158,6 +1158,8 @@ pub struct WeatherInfo {
     pub installed: bool,
 }
 
+pub use omsi_content::weather_choice::metar_airports;
+
 /// The ICAO code of the airport nearest the map (by its `timezone.txt`), whose METAR report
 /// is the map's current weather; Berlin's where the map does not say where it lies.
 pub fn nearest_airport(root: &str, map: &str) -> String {

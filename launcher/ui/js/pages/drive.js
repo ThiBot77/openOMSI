@@ -259,6 +259,10 @@ function TimeCard() {
     if (c.map) call('nearest_airport', { map: c.map }).then(setAirport).catch(() => {});
   }, [c.map]);
   const metar = c.weather?.startsWith('metar:') ? c.weather.slice(6) || airport : airport;
+  const [airports, setAirports] = useState([]);
+  useEffect(() => {
+    if (c.weather?.startsWith('metar:') && !airports.length) call('metar_airports').then(setAirports).catch(() => {});
+  }, [c.weather]);
   const weatherHelp = cur ? cur.description
     : c.weather?.startsWith('metar:') ? t('METAR of {} (fetched at the start)', [metar])
     : c.weather === 'cycle' ? 'Changes every 25-60 minutes, as the month allows'
@@ -280,6 +284,9 @@ function TimeCard() {
       <${Field} label="Weather" help=${weatherHelp}>
         <${Select} raw value=${c.weather} options=${[['', t('Natural weather')], ...(metar ? [[`metar:${metar}`, t('Current weather')]] : []), ['cycle', t('Weather cycle')], ...w.map((x) => [x.file, x.name])]} onChange=${(weather) => choose({ weather })} />
       </${Field}>
+      ${c.weather?.startsWith('metar:') && airports.length > 0 && html`<${Field} label="Airport">
+        <${Select} raw value=${metar} options=${airports} onChange=${(code) => choose({ weather: `metar:${code}` })} />
+      </${Field}>`}
     </div>
   </${Card}>`;
 }
