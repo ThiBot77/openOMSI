@@ -80,7 +80,14 @@ fn doorways(ty: &omsi_sim::VehicleType) -> Option<Vec<Vec<String>>> {
     // which doorways a trigger reaches (its leaves' doorways; a script's branches all count)
     let way_of = |leaf: &String| ways.iter().position(|w| w.iter().any(|(l, _)| l == leaf));
     let reach = |name: &str| -> Vec<usize> {
-        let mut v: Vec<usize> = trigger_leaves(program, name).iter().filter_map(way_of).collect();
+        // (a target for several leaves, the Urbanway's `doorTarget_23`, reaches each of them)
+        let mut v: Vec<usize> = trigger_leaves(program, name)
+            .iter()
+            .flat_map(|leaf| match way_of(leaf) {
+                Some(w) => vec![w],
+                None => leaf.strip_prefix("door_").filter(|d| d.len() > 1 && d.bytes().all(|c| c.is_ascii_digit())).map(|d| d.chars().filter_map(|c| way_of(&format!("door_{c}"))).collect()).unwrap_or_default(),
+            })
+            .collect();
         v.sort();
         v.dedup();
         v
@@ -95,6 +102,8 @@ fn doorways(ty: &omsi_sim::VehicleType) -> Option<Vec<Vec<String>>> {
         }
         let parts: Vec<Vec<String>> = match (g.first(), g.get(1)) {
             (Some(a), Some(b)) if !reach(a).is_empty() && !reach(b).is_empty() && !reach(a).iter().any(|w| reach(b).contains(w)) => vec![vec![a.clone()], vec![b.clone()]],
+            // (leaves on a coupled part, the Urbanway 18's `doorTarget_45` and `_67`: by their numbers)
+            (Some(a), Some(b)) if (reach(a).is_empty() || reach(b).is_empty()) && numbers_differ(&trigger_door_numbers(program, a, true), &trigger_door_numbers(program, b, true)) => vec![vec![a.clone()], vec![b.clone()]],
             _ => vec![g.clone()],
         };
         for part in parts {
@@ -139,7 +148,62 @@ fn doorways(ty: &omsi_sim::VehicleType) -> Option<Vec<Vec<String>>> {
 /// The door keys of a vehicle type: its doorways from the model ([`doorways`]), else the
 /// trigger names ([`door_trigger_groups`]).
 pub(crate) fn door_keys(ty: &omsi_sim::VehicleType) -> Vec<Vec<String>> {
-    doorways(ty).unwrap_or_else(|| door_trigger_groups(&ty.program))
+    doorways(ty).unwrap_or_else(|| split_numbered_doors(&ty.program, door_trigger_groups(&ty.program)))
+}
+
+/// The door numbers (`Tuer_1`, `Tür_2`, with `targets` also `doorTarget_45`) a trigger stores into, itself or in its macros.
+fn trigger_door_numbers(program: &omsi_script::Program, name: &str, targets: bool) -> Vec<u32> {
+    fn walk(program: &omsi_script::Program, block: omsi_script::BlockId, seen: &mut hashbrown::HashSet<omsi_script::BlockId>, out: &mut Vec<u32>, targets: bool) {
+        if !seen.insert(block) || seen.len() > 64 {
+            return;
+        }
+        let Some(b) = program.blocks.get(block as usize) else { return };
+        for op in &b.ops {
+            match op {
+                omsi_script::Op::Store(id) => {
+                    let Some(n) = program.var_names.get(*id as usize).map(|n| n.to_lowercase()) else { continue };
+                    for word in ["tuer_", "tür_", "doortarget_"].iter().take(if targets { 3 } else { 2 }) {
+                        if let Some(at) = n.find(word) {
+                            let digits: String = n[at + word.len()..].chars().take_while(|c| c.is_ascii_digit()).collect();
+                            if let Ok(d) = digits.parse::<u32>() {
+                                if !out.contains(&d) {
+                                    out.push(d);
+                                }
+                            }
+                        }
+                    }
+                }
+                omsi_script::Op::Macro(m) => walk(program, *m, seen, out, targets),
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    if let Some(b) = program.trigger(name) {
+        walk(program, b, &mut hashbrown::HashSet::new(), &mut out, targets);
+    }
+    out
+}
+
+/// Both lists name doors, and none of the same.
+fn numbers_differ(a: &[u32], b: &[u32]) -> bool {
+    !a.is_empty() && !b.is_empty() && !a.iter().any(|n| b.contains(n))
+}
+
+/// A `bus_doorfront<n>` pair split when its triggers work differently numbered doors (the C2's first and second).
+fn split_numbered_doors(program: &omsi_script::Program, groups: Vec<Vec<String>>) -> Vec<Vec<String>> {
+    let mut out = Vec::new();
+    for g in groups {
+        if let [a, b] = g.as_slice() {
+            if numbers_differ(&trigger_door_numbers(program, a, false), &trigger_door_numbers(program, b, false)) {
+                out.push(vec![a.clone()]);
+                out.push(vec![b.clone()]);
+                continue;
+            }
+        }
+        out.push(g);
+    }
+    out
 }
 
 /// Every door of a bus, `Shift+1` first: the stock scripts name a door `bus_doorfront<n>`
@@ -340,3 +404,39 @@ pub(crate) fn digit_of(code: KeyCode) -> Option<usize> {
 
 // (the game's own door actions by name live with the controllers: `omsi-input`)
 pub(crate) use omsi_input::actions::door_action;
+
+#[cfg(test)]
+mod numbered_door_tests {
+    use super::*;
+
+    fn program(src: &str, vars: &str) -> omsi_script::Program {
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("omsi_door_test_{}_{n}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("t.osc"), src).unwrap();
+        std::fs::write(dir.join("v.txt"), vars).unwrap();
+        omsi_script::compile(&omsi_script::CompileInput { varlists: vec![dir.join("v.txt")], scripts: vec![dir.join("t.osc")], ..Default::default() })
+    }
+
+    #[test]
+    fn the_c2s_first_and_second_door_keys_are_not_one_door() {
+        // GPM C2: `bus_doorfront0` works door 1, `bus_doorfront1` door 2
+        let p = program(
+            "{trigger:bus_doorfront0}\n1 (S.L.C2_CP_BT_Tuer_1)\n{end}\n{trigger:bus_doorfront1}\n1 (S.L.C2_CP_BT_Tuer_2)\n{end}\n{trigger:bus_dooraft}\n{end}\n",
+            "C2_CP_BT_Tuer_1\nC2_CP_BT_Tuer_2\n",
+        );
+        assert_eq!(split_numbered_doors(&p, door_trigger_groups(&p)), vec![vec!["bus_doorfront0".to_string()], vec!["bus_doorfront1".to_string()], vec!["bus_dooraft".to_string()]]);
+    }
+
+    #[test]
+    fn the_two_leaves_of_one_door_stay_one_door_key() {
+        // the stock SD202: one door's two leaves, `doorTarget_0` and `_1`
+        let p = program("{trigger:bus_doorfront0}\n1 (S.L.doorTarget_0)\n{end}\n{trigger:bus_doorfront1}\n1 (S.L.doorTarget_1)\n{end}\n", "doorTarget_0\ndoorTarget_1\n");
+        assert_eq!(split_numbered_doors(&p, door_trigger_groups(&p)), vec![vec!["bus_doorfront0".to_string(), "bus_doorfront1".to_string()]]);
+        // (the targets count only where the leaves cannot be placed, the Urbanway 18's rear section)
+        let p = program("{trigger:bus_doorfront2}\n1 (S.L.doorTarget_45)\n{end}\n{trigger:bus_doorfront3}\n1 (S.L.doorTarget_67)\n{end}\n", "doorTarget_45\ndoorTarget_67\n");
+        assert!(numbers_differ(&trigger_door_numbers(&p, "bus_doorfront2", true), &trigger_door_numbers(&p, "bus_doorfront3", true)));
+        assert!(trigger_door_numbers(&p, "bus_doorfront2", false).is_empty());
+    }
+}
