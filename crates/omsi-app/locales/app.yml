@@ -33183,3 +33183,12 @@ _version: 2
   de: "Wird installiert..."
   ru: "Установка..."
   uk: "Встановлення..."
+
+"{n} versions":
+  de: "{n} Versionen"
+  fr: "{n} versions"
+  es: "{n} versiones"
+  it: "{n} versioni"
+  nl: "{n} versies"
+  pl: "{n} wersji"
+  pt: "{n} versões"
