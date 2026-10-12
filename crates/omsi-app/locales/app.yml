@@ -36783,3 +36783,7 @@ _version: 2
   ru: "{name} настроено автоматически ({what}). Проверьте ниже и измените, если что-то не так."
   de: "{name} wurde automatisch eingerichtet ({what}). Unten prüfen und ändern, was nicht stimmt."
   fr: "{name} a été configuré automatiquement ({what}). Vérifiez ci-dessous et corrigez ce qui ne va pas."
+
+"Door release (passengers open), any bus":
+  de: "Türfreigabe (Fahrgäste öffnen), jeder Bus"
+  fr: "Déverrouillage des portes (les voyageurs ouvrent), tous bus"

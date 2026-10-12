@@ -385,6 +385,26 @@ impl Player {
         fire
     }
 
+    /// `doors_release`: the bus's own door release, the C2's switch turned over, else `bus_dooraft`; the triggers fired.
+    pub(crate) fn door_release(&mut self) -> Vec<String> {
+        let p = &self.vehicle.ty.program;
+        let pick = ["bus_doorall", "CG_active", "C2_CP_doorall_1"]
+            .into_iter()
+            .find(|t| p.trigger(t).is_some())
+            .map(str::to_string)
+            .or_else(|| {
+                (p.trigger("C2_CP_Tuerfreigabe_1").is_some() && p.trigger("C2_CP_Tuerfreigabe_0").is_some())
+                    .then(|| if self.vehicle.var("C2_CP_Tuerfreigabe").is_some_and(|x| x > 0.5) { "C2_CP_Tuerfreigabe_0" } else { "C2_CP_Tuerfreigabe_1" }.to_string())
+            })
+            .or_else(|| p.trigger("bus_dooraft").is_some().then(|| "bus_dooraft".to_string()));
+        log::info!("door release: {}", pick.as_deref().unwrap_or("none on this bus"));
+        let fired: Vec<String> = pick.into_iter().collect();
+        for name in &fired {
+            self.vehicle.trigger(name);
+        }
+        fired
+    }
+
     /// A door key let go: the `_off` of the triggers it fired (the push buttons of the
     /// automatic doors are held between the two).
     pub(crate) fn door_key_off(&mut self, fired: &[String]) {
@@ -426,6 +446,15 @@ impl Player {
         }
         // the ticket key of Inputs/keyboard.cfg (T): sell the ticket the passenger at the
         // desk asked for, on buses whose script has no ticket printer
+        if omsi_input::actions::is_door_release(name) {
+            if pressed {
+                let fired = self.door_release();
+                self.door_buttons.insert("doors_release".into(), fired);
+            } else if let Some(fired) = self.door_buttons.remove("doors_release") {
+                self.door_key_off(&fired);
+            }
+            return true;
+        }
         if let Some(n) = door_action(name) {
             if pressed {
                 let fired = self.door_key(n);
