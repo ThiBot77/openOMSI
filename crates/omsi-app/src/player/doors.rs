@@ -80,12 +80,18 @@ fn doorways(ty: &omsi_sim::VehicleType) -> Option<Vec<Vec<String>>> {
     // which doorways a trigger reaches (its leaves' doorways; a script's branches all count)
     let way_of = |leaf: &String| ways.iter().position(|w| w.iter().any(|(l, _)| l == leaf));
     let reach = |name: &str| -> Vec<usize> {
-        // (a target for several leaves, the Urbanway's `doorTarget_23`, reaches each of them)
+        // (a target for several leaves of one doorway, the Urbanway's `doorTarget_23`, reaches it)
         let mut v: Vec<usize> = trigger_leaves(program, name)
             .iter()
             .flat_map(|leaf| match way_of(leaf) {
                 Some(w) => vec![w],
-                None => leaf.strip_prefix("door_").filter(|d| d.len() > 1 && d.bytes().all(|c| c.is_ascii_digit())).map(|d| d.chars().filter_map(|c| way_of(&format!("door_{c}"))).collect()).unwrap_or_default(),
+                None => leaf
+                    .strip_prefix("door_")
+                    .filter(|d| d.len() > 1 && d.bytes().all(|c| c.is_ascii_digit()))
+                    .and_then(|d| d.chars().map(|c| way_of(&format!("door_{c}"))).collect::<Option<Vec<usize>>>())
+                    .filter(|w| w.iter().all(|x| *x == w[0]))
+                    .map(|w| vec![w[0]])
+                    .unwrap_or_default(),
             })
             .collect();
         v.sort();
