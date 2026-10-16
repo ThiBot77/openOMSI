@@ -188,6 +188,30 @@ function drawLayers(g, l, v, W, H) {
   g.restore();
 }
 
+/** The land, the layers and the roads: everything under the route, for the view `v`. */
+function drawGround(g, d, v, W, H) {
+  const X = (x) => W / 2 + (x - v.cx) / v.mpp;
+  const Y = (y) => H / 2 - (y - v.cy) / v.mpp;
+  g.fillStyle = LOOK.land;
+  g.fillRect(0, 0, W, H);
+  if (d.package) drawSurface(g, d.package, v, W, H);
+  if (d.layers) drawLayers(g, d.layers, v, W, H);
+  g.lineCap = g.lineJoin = 'round';
+  // the roads' middles: where a road has a paved surface it lies under it, where not it is
+  // the road (its edge, then the white)
+  const paved = !!d.layers && v.mpp < 2.5;
+  for (let pass = 0; pass < 2; pass++) {
+    for (const r of d.roads) {
+      g.beginPath();
+      for (let i = 0; i < r.p.length; i += 2) (i ? g.lineTo : g.moveTo).call(g, X(r.p[i]), Y(r.p[i + 1]));
+      g.strokeStyle = pass ? LOOK.road : LOOK.roadEdge;
+      const w = paved ? Math.max(r.w - 1.2, 1.5) : r.w;
+      g.lineWidth = Math.max((w + (pass ? 0 : paved ? 0 : 1.2)) / v.mpp, pass ? (r.main ? 2.2 : 1.4) : r.main ? 3.4 : 2.6);
+      g.stroke();
+    }
+  }
+}
+
 function load(map, date, trip) {
   const key = `${map}|${date}|${trip}`;
   if (!cache.has(key)) cache.set(key, call('route_map', { map, date, trip }).then(onRoute, (e) => ({ error: e.message })));
@@ -212,8 +236,9 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
     return () => (alive = false);
   }, [map, date, trip]);
 
+  const base = useRef(null);
   // the picture, drawn again whenever anything it shows changes
-  const draw = () => {
+  const draw = (moving = false) => {
     const c = cv.current;
     const d = data;
     if (!c || !d || d.error) return;
@@ -237,32 +262,32 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
       view.current = { cx: (lo[0] + hi[0]) / 2, cy: (lo[1] + hi[1]) / 2, mpp: span };
     }
     const v = view.current;
+    // the ground, drawn again only for a new view once moving stops; while moving it is shifted
+    let b = base.current;
+    const same = b && b.d === d && b.W === W && b.H === H && b.dpr === dpr;
+    const near = same && Math.abs(b.v.cx - v.cx) / v.mpp < W / 2 && Math.abs(b.v.cy - v.cy) / v.mpp < H / 2 && b.v.mpp / v.mpp > 0.5 && b.v.mpp / v.mpp < 2;
+    const exact = same && b.v.cx === v.cx && b.v.cy === v.cy && b.v.mpp === v.mpp;
+    if (!exact && !(moving && near)) {
+      const bc = b?.canvas || document.createElement('canvas');
+      Object.assign(bc, { width: Math.round(2 * W * dpr), height: Math.round(2 * H * dpr) });
+      const bg = bc.getContext('2d');
+      bg.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawGround(bg, d, v, 2 * W, 2 * H);
+      b = base.current = { canvas: bc, d, W, H, dpr, v: { ...v } };
+    }
     const g = c.getContext('2d');
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.clearRect(0, 0, W, H);
+    g.fillStyle = LOOK.land;
+    g.fillRect(0, 0, W, H);
+    const k = b.v.mpp / v.mpp;
+    g.drawImage(b.canvas, W / 2 - W * k + (b.v.cx - v.cx) / v.mpp, H / 2 - H * k - (b.v.cy - v.cy) / v.mpp, 2 * W * k, 2 * H * k);
     const X = (x) => W / 2 + (x - v.cx) / v.mpp;
     const Y = (y) => H / 2 - (y - v.cy) / v.mpp;
     const line = (p) => {
       g.beginPath();
       for (let i = 0; i < p.length; i += 2) (i ? g.lineTo : g.moveTo).call(g, X(p[i]), Y(p[i + 1]));
     };
-    g.fillStyle = LOOK.land;
-    g.fillRect(0, 0, W, H);
-    if (d.package) drawSurface(g, d.package, v, W, H);
-    if (d.layers) drawLayers(g, d.layers, v, W, H);
     g.lineCap = g.lineJoin = 'round';
-    // the roads' middles: where a road has a paved surface it lies under it, where not it is
-    // the road (its edge, then the white)
-    const paved = !!d.layers && v.mpp < 2.5;
-    for (let pass = 0; pass < 2; pass++) {
-      for (const r of d.roads) {
-        line(r.p);
-        g.strokeStyle = pass ? LOOK.road : LOOK.roadEdge;
-        const w = paved ? Math.max(r.w - 1.2, 1.5) : r.w;
-        g.lineWidth = Math.max((w + (pass ? 0 : paved ? 0 : 1.2)) / v.mpp, pass ? (r.main ? 2.2 : 1.4) : r.main ? 3.4 : 2.6);
-        g.stroke();
-      }
-    }
     for (const [color, wide] of [[LOOK.routeEdge, 7], [LOOK.route, 4.6]]) {
       g.strokeStyle = color;
       g.lineWidth = wide;
@@ -342,6 +367,15 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
   };
   const latest = useRef(draw);
   latest.current = draw;
+  // dragging and zooming draw once a frame, then sharp again once they stop
+  const frame = useRef(0);
+  const settle = useRef(0);
+  const move = () => {
+    if (!frame.current) frame.current = requestAnimationFrame(() => ((frame.current = 0), latest.current(true)));
+    clearTimeout(settle.current);
+    settle.current = setTimeout(() => latest.current(), 150);
+  };
+  useEffect(() => () => (cancelAnimationFrame(frame.current), clearTimeout(settle.current)), []);
   useEffect(draw, [data, hover, entry, stops.map((x) => `${x.time} ${x.name}`).join('|')]);
   useEffect(() => {
     const redraw = () => latest.current();
@@ -391,7 +425,7 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
           d.p = p;
           view.current.cx -= dx * view.current.mpp;
           view.current.cy += dy * view.current.mpp;
-          draw();
+          move();
         } else {
           const h = entryAt(p);
           if (h !== hover) setHover(h);
@@ -418,7 +452,7 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
         v.mpp = Math.min(Math.max(v.mpp * (e.deltaY > 0 ? 1.15 : 1 / 1.15), 0.15), 200);
         v.cx = wx - (px - W / 2) * v.mpp;
         v.cy = wy + (py - H / 2) * v.mpp;
-        draw();
+        move();
       }}>
     <canvas ref=${cv}></canvas>
     ${!data && html`<div class="state"><${Spinner} /> ${t('Reading the map…')}</div>`}
