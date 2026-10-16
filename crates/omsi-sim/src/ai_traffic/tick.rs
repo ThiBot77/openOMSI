@@ -159,6 +159,7 @@ impl TrafficSim {
         frames.resize(self.cars.len(), None);
         let feet = super::foot_grid::Feet::new(self.footprints());
         self.break_lead_pairs();
+        self.break_lead_circles();
         self.resolve_waits();
         self.collect_change_claims();
         let ts = TickScene { dt, debug, player, player_standing, others, feet, by_lane, coming, walkers };

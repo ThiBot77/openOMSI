@@ -7,6 +7,10 @@ pub const PLAYER_BOX_MARGIN: f32 = 0.5;
 /// Somebody on foot more than this far above or below a car's way is not in it (m).
 pub const PEOPLE_LEVEL: f64 = 2.5;
 
+/// Seconds every car of a circle of three or more has stood before one drives off
+/// (`Traffic::break_lead_circles`).
+pub const CIRCLE_WAIT: f32 = 6.0;
+
 /// Another vehicle more than this far above or below a car's way (where the way passes it)
 /// is not in it (m): the road under a bridge is some 4.5 m below the deck.
 pub const BODY_LEVEL: f64 = 3.0;
@@ -130,6 +134,55 @@ impl TrafficSim {
         for (go, other) in pairs {
             if omsi_cfg::flags::OMSI_DEBUG_STUCK.is_set() {
                 log::info!("t={:.1}: cars {} and {} each waited for the other: {} drives off", self.time, self.cars[go].id, other, self.cars[go].id);
+            }
+            self.cars[go].ignore_lead = Some((other, self.time as f64 + 5.0));
+        }
+    }
+
+    /// A circle of three or more cars, each standing behind the next (a roundabout full all
+    /// round, a car's body in the way of the one that would leave it), stands for good:
+    /// `break_lead_pairs` only sorts out two. Once all of them have stood `CIRCLE_WAIT`, one
+    /// stops taking its lead for its lead for a few seconds and drives off: one whose lead is
+    /// not on its own way (only its body is in the way: leaving, it makes room), else the one
+    /// that has stood longest.
+    pub fn break_lead_circles(&mut self) {
+        let index: HashMap<u64, usize> = self.cars.iter().enumerate().map(|(k, c)| (c.id, k)).collect();
+        let lead = |k: usize| self.cars[k].lead_car.and_then(|id| index.get(&id).copied());
+        let mut seen = vec![false; self.cars.len()];
+        let mut goes: Vec<(usize, u64)> = Vec::new();
+        for start in 0..self.cars.len() {
+            let mut path: Vec<usize> = Vec::new();
+            let mut k = start;
+            while !seen[k] {
+                seen[k] = true;
+                path.push(k);
+                match lead(k) {
+                    Some(n) => k = n,
+                    None => break,
+                }
+            }
+            let Some(at) = path.iter().position(|&x| x == k) else { continue };
+            let circle = &path[at..];
+            if circle.len() < 3 || lead(*circle.last().unwrap()) != Some(circle[0]) {
+                continue;
+            }
+            if circle.iter().any(|&c| self.cars[c].stopped < CIRCLE_WAIT || self.cars[c].light_hold || self.cars[c].ignore_lead.is_some_and(|(_, until)| (self.time as f64) < until)) {
+                continue;
+            }
+            let off_way = |c: usize| {
+                let l = self.cars[lead(c).unwrap()].state.lane;
+                let st = &self.cars[c].state;
+                l != st.lane && !st.upcoming().any(|u| u == l)
+            };
+            let longest = |list: &mut dyn Iterator<Item = usize>| list.max_by(|&a, &b| self.cars[a].stopped.total_cmp(&self.cars[b].stopped));
+            let go = longest(&mut circle.iter().copied().filter(|&c| off_way(c))).or_else(|| longest(&mut circle.iter().copied()));
+            if let Some(go) = go {
+                goes.push((go, self.cars[lead(go).unwrap()].id));
+            }
+        }
+        for (go, other) in goes {
+            if omsi_cfg::flags::OMSI_DEBUG_STUCK.is_set() {
+                log::info!("t={:.1}: a circle of cars stood behind each other: car {} drives off past car {}", self.time, self.cars[go].id, other);
             }
             self.cars[go].ignore_lead = Some((other, self.time as f64 + 5.0));
         }

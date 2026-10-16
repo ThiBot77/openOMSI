@@ -898,3 +898,48 @@ fn a_driver_standing_at_his_line_can_still_stop() {
     // of two close in time, the one standing at its line does not go first for it
     assert!(goes_first((1.0, 8.0, 4.0, 9), (1.4, 0.6, 0.0, 1)));
 }
+
+/// Three cars standing behind each other all round (each the next one's lead) for `stood`
+/// seconds: two on the ring, the third at the end of the road to its entry.
+fn standing_circle(f: &Fixture, stood: [f32; 3]) -> (TrafficSim, [u64; 3]) {
+    let mut t = plain(f, roundabout());
+    let ids = [car(&mut t, f, 0, 10.0, 0xc1, 0.0), car(&mut t, f, 1, 4.0, 0xc2, 0.0), car(&mut t, f, 1, 15.0, 0xc3, 0.0)];
+    for (k, id) in ids.iter().enumerate() {
+        let c = t.cars.iter_mut().find(|c| c.id == *id).unwrap();
+        c.lead_car = Some(ids[(k + 1) % 3]);
+        c.stopped = stood[k];
+        c.state.speed = 0.0;
+    }
+    // (the third, on the road to the entry, has the first's body in its way, not on its way)
+    let third = t.cars.iter_mut().find(|c| c.id == ids[2]).unwrap();
+    third.state.lane = 5;
+    third.state.s = 99.0;
+    (t, ids)
+}
+
+#[test]
+fn one_car_of_a_circle_standing_behind_each_other_drives_off() {
+    let f = Fixture::new();
+    let (mut t, ids) = standing_circle(&f, [40.0, 30.0, 20.0]);
+    t.break_lead_circles();
+    let going: Vec<u64> = t.cars.iter().filter(|c| c.ignore_lead.is_some()).map(|c| c.id).collect();
+    assert_eq!(going.len(), 1, "{going:?}");
+    let go = get(&t, going[0]);
+    assert_eq!(go.ignore_lead.map(|l| l.0), go.lead_car, "it drives off past its own lead");
+    // not the longest waiter, whose lead is ahead on its way, but the longest of those whose
+    // lead is not (the second's lead stands on the road, the third's on the ring)
+    assert_eq!(going[0], ids[1]);
+}
+
+#[test]
+fn a_circle_that_has_not_stood_long_or_a_pair_is_left_alone() {
+    let f = Fixture::new();
+    let (mut t, _) = standing_circle(&f, [40.0, 30.0, 5.0]);
+    t.break_lead_circles();
+    assert!(t.cars.iter().all(|c| c.ignore_lead.is_none()), "one of them has only just stopped");
+    // two cars waiting for each other are `break_lead_pairs`' to sort out
+    let (mut t, ids) = standing_circle(&f, [40.0, 30.0, 20.0]);
+    t.cars.iter_mut().find(|c| c.id == ids[1]).unwrap().lead_car = Some(ids[0]);
+    t.break_lead_circles();
+    assert!(t.cars.iter().all(|c| c.ignore_lead.is_none()));
+}
