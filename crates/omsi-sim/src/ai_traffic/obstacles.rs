@@ -144,8 +144,9 @@ impl TrafficSim {
     /// `break_lead_pairs` only sorts out two. The player's bus standing in it is one of the
     /// circle too (it follows the car just in front of it). Once all of them have stood
     /// `CIRCLE_WAIT`, one car stops taking its lead for its lead for a few seconds and drives
-    /// off: one whose lead is not on its own way (only its body is in the way: leaving, it
-    /// makes room), else the one that has stood longest; never the one behind the bus.
+    /// off: the longest waiter of those whose lead is not on their own way (only its body is
+    /// in the way: leaving, it makes room). A car whose lead is ahead on its way is never let
+    /// go, it would only drive into it; nor is the one behind the bus.
     pub fn break_lead_circles(&mut self) {
         let index: HashMap<u64, usize> = self.cars.iter().enumerate().map(|(k, c)| (c.id, k)).collect();
         // (the player's bus is node `n`, following the car just in front of it)
@@ -202,7 +203,7 @@ impl TrafficSim {
             let longest = |list: &mut dyn Iterator<Item = usize>| list.max_by(|&a, &b| self.cars[a].stopped.total_cmp(&self.cars[b].stopped));
             // (not the bus, nor the car behind it: that one would drive into it)
             let cars = || circle.iter().copied().filter(|&c| c < n && lead(c) != Some(n));
-            let go = longest(&mut cars().filter(|&c| off_way(c))).or_else(|| longest(&mut cars()));
+            let go = longest(&mut cars().filter(|&c| off_way(c)));
             if let Some(go) = go {
                 goes.push((go, self.cars[lead(go).unwrap()].id));
             }

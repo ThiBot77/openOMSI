@@ -946,11 +946,11 @@ fn a_circle_that_has_not_stood_long_or_a_pair_is_left_alone() {
 
 #[test]
 fn a_circle_through_the_players_bus_is_broken_up_by_a_car_not_behind_it() {
-    // the bus stands heading north at (0, 0); car a just in front of it waits for car b,
-    // which waits for the bus
+    // the bus stands heading north at (0, 0); car a just in front of it has the body of car b
+    // (at the end of the road to the entry, off a's way) in its way; b waits for the bus
     let f = Fixture::new();
     let mut t = plain(&f, roundabout());
-    let (a, b) = (car(&mut t, &f, 0, 10.0, 0xd1, 0.0), car(&mut t, &f, 1, 4.0, 0xd2, 0.0));
+    let (a, b) = (car(&mut t, &f, 0, 10.0, 0xd1, 0.0), car(&mut t, &f, 5, 99.0, 0xd2, 0.0));
     t.player = Some((DVec3::ZERO, 0.0, 6.0, 1.25, 0.0));
     t.player_still = 20.0;
     for (id, at) in [(a, DVec3::new(0.0, 9.0, 0.0)), (b, DVec3::new(20.0, 0.0, 0.0))] {
@@ -978,4 +978,20 @@ fn a_circle_through_the_players_bus_is_broken_up_by_a_car_not_behind_it() {
     t2.cars.iter_mut().find(|c| c.id == b2).unwrap().lead_player = true;
     t2.break_lead_circles();
     assert!(t2.cars.iter().all(|c| c.ignore_lead.is_none()));
+}
+
+#[test]
+fn a_car_of_a_circle_is_not_let_go_into_the_car_ahead_on_its_way() {
+    // three cars round the ring, each behind the next on its own way: letting one go would
+    // only drive it into the one ahead
+    let f = Fixture::new();
+    let mut t = plain(&f, roundabout());
+    let ids = [car(&mut t, &f, 0, 10.0, 0xe1, 0.0), car(&mut t, &f, 1, 10.0, 0xe2, 0.0), car(&mut t, &f, 2, 10.0, 0xe3, 0.0)];
+    for (k, id) in ids.iter().enumerate() {
+        let c = t.cars.iter_mut().find(|c| c.id == *id).unwrap();
+        c.lead_car = Some(ids[(k + 1) % 3]);
+        c.stopped = 30.0;
+    }
+    t.break_lead_circles();
+    assert!(t.cars.iter().all(|c| c.ignore_lead.is_none()));
 }
