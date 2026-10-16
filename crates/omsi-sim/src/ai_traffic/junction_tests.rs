@@ -943,3 +943,39 @@ fn a_circle_that_has_not_stood_long_or_a_pair_is_left_alone() {
     t.break_lead_circles();
     assert!(t.cars.iter().all(|c| c.ignore_lead.is_none()));
 }
+
+#[test]
+fn a_circle_through_the_players_bus_is_broken_up_by_a_car_not_behind_it() {
+    // the bus stands heading north at (0, 0); car a just in front of it waits for car b,
+    // which waits for the bus
+    let f = Fixture::new();
+    let mut t = plain(&f, roundabout());
+    let (a, b) = (car(&mut t, &f, 0, 10.0, 0xd1, 0.0), car(&mut t, &f, 1, 4.0, 0xd2, 0.0));
+    t.player = Some((DVec3::ZERO, 0.0, 6.0, 1.25, 0.0));
+    t.player_still = 20.0;
+    for (id, at) in [(a, DVec3::new(0.0, 9.0, 0.0)), (b, DVec3::new(20.0, 0.0, 0.0))] {
+        let c = t.cars.iter_mut().find(|c| c.id == id).unwrap();
+        c.vehicle.position = at;
+        c.stopped = 20.0;
+        c.state.speed = 0.0;
+    }
+    t.cars.iter_mut().find(|c| c.id == a).unwrap().lead_car = Some(b);
+    t.cars.iter_mut().find(|c| c.id == b).unwrap().lead_player = true;
+    t.break_lead_circles();
+    assert_eq!(get(&t, a).ignore_lead.map(|l| l.0), Some(b), "the car in front of the bus drives off");
+    assert!(get(&t, b).ignore_lead.is_none(), "the one behind the bus keeps waiting for it");
+    // the bus has only just stopped: nothing yet
+    let mut t2 = plain(&f, roundabout());
+    let (a2, b2) = (car(&mut t2, &f, 0, 10.0, 0xd3, 0.0), car(&mut t2, &f, 1, 4.0, 0xd4, 0.0));
+    t2.player = Some((DVec3::ZERO, 0.0, 6.0, 1.25, 0.0));
+    t2.player_still = 2.0;
+    for (id, at) in [(a2, DVec3::new(0.0, 9.0, 0.0)), (b2, DVec3::new(20.0, 0.0, 0.0))] {
+        let c = t2.cars.iter_mut().find(|c| c.id == id).unwrap();
+        c.vehicle.position = at;
+        c.stopped = 20.0;
+    }
+    t2.cars.iter_mut().find(|c| c.id == a2).unwrap().lead_car = Some(b2);
+    t2.cars.iter_mut().find(|c| c.id == b2).unwrap().lead_player = true;
+    t2.break_lead_circles();
+    assert!(t2.cars.iter().all(|c| c.ignore_lead.is_none()));
+}

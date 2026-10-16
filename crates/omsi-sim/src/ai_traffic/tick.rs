@@ -1077,6 +1077,7 @@ impl TrafficSim {
         let priority_warning = self.priority_warning(i, lead.map(|l| l.0));
         let car = &mut self.cars[i];
         car.lead_car = lead_id;
+        car.lead_player = lead.and_then(|l| l.1) == Some(usize::MAX);
         if car.state.speed.abs() < 0.1 && !car.at_stop() {
             car.stopped += dt;
         } else {

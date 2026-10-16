@@ -86,6 +86,7 @@ impl Traffic {
             stopped: 0.0,
             lead_car: None,
             ignore_lead: None,
+            lead_player: false,
             crawl: 0.0,
             progress: (0.0, 0.0),
             bus: (context.active > 0.5).then(|| Box::new(BusService::new(Vec::new()))),
