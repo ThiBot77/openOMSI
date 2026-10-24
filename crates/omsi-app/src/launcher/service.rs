@@ -271,7 +271,7 @@ fn serve(rx: std::sync::mpsc::Receiver<Value>, reply: Reply) {
 /// as sRGB bytes, straight alpha), then the widened ones', 16 bytes each (position, extrusion
 /// in 1/4096, width in metres and in pixels in 1/256, all `i16`, then the colour). The page
 /// widens each by its extrusion times the larger of the two widths, as the game's shader does.
-/// A flat triangle smaller than a quarter of a pixel is left out: the picture is the same.
+/// A flat triangle smaller than half a pixel is left out: the picture is the same.
 fn map_ground(map: &str, global: &std::path::Path, date: &str, at: glam::DVec2, reach: f64, mpp: f64, light: bool) -> Vec<u8> {
     use std::sync::Arc;
     type Read = (String, glam::DVec2, Arc<omsi_navigator::MapGround>);
@@ -306,7 +306,7 @@ fn map_ground(map: &str, global: &std::path::Path, date: &str, at: glam::DVec2, 
         .filter_map(|t| {
             let wide = t.iter().any(|v| v.ext != [0.0, 0.0]);
             let span = |i: usize| t.iter().map(|v| v.pos[i]).fold(f32::MIN, f32::max) - t.iter().map(|v| v.pos[i]).fold(f32::MAX, f32::min);
-            (wide || span(0).max(span(1)) as f64 >= mpp * 0.25).then_some((wide, t))
+            (wide || span(0).max(span(1)) as f64 >= mpp * 0.5).then_some((wide, t))
         })
         .collect();
     let far = tris.iter().flat_map(|(_, t)| t.iter()).fold(1.0f32, |m, v| m.max(v.pos[0].abs()).max(v.pos[1].abs()));
