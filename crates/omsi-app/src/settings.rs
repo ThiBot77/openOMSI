@@ -624,8 +624,7 @@ impl Settings {
                 "ssao" | "ambient_occlusion" => s.ssao = b(v),
                 "shadows" => s.shadows = b(v),
                 "shadow_size" => s.shadow_size = v.parse().unwrap_or(s.shadow_size),
-                "shadow_blobs" => s.shadow_blobs = b(v),
-                "lamp_shadows" => s.lamp_shadows = b(v),
+                "shadow_blobs" | "lamp_shadows" => { let on = b(v); if k == "lamp_shadows" { s.lamp_shadows = on } else { s.shadow_blobs = on } }
                 "navigator" => s.navigator = b(v),
                 "ui_opacity" | "navigator_opacity" => s.ui_opacity = v.parse::<f32>().ok().filter(|x| x.is_finite()).map(|x| x.clamp(0.2, 1.0)).unwrap_or(s.ui_opacity),
                 "navigator_corner" => s.navigator_corner = v.to_ascii_lowercase(),
